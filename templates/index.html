@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TDS Data Analyst Agent</title>
+    <style>
+      :root {
+        --bg: #0b0b0c;
+        --card: #121216;
+        --muted: #8b8b94;
+        --text: #f2f2f4;
+        --accent: #4d7cff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.45 system-ui, Segoe UI, Roboto, Ubuntu, "Helvetica Neue",
+          Arial;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: var(--card);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      }
+      .row {
+        display: grid;
+        gap: 14px;
+      }
+      textarea,
+      input[type="file"] {
+        width: 100%;
+        background: #0e0e12;
+        color: var(--text);
+        border: 1px solid #23232a;
+        border-radius: 12px;
+        padding: 12px;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background: #0e0e12;
+        border: 1px solid #23232a;
+        border-radius: 12px;
+        padding: 12px;
+        overflow: auto;
+      }
+      img {
+        max-width: 100%;
+        border-radius: 12px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>🧪 TDS Data Analyst Agent</h1>
+      <p class="muted">
+        POSTs <code>questions.txt</code> plus optional attachments to
+        <code>/api/</code> and renders the JSON response. Built with Flask +
+        HTML only.
+      </p>
+
+      <form id="form" class="card row">
+        <label class="grid">
+          <span>questions.txt (editable)</span>
+          <textarea id="q" rows="10">
+Scrape the list of highest grossing films from Wikipedia. It is at the URL:
+https://en.wikipedia.org/wiki/List_of_highest-grossing_films
+
+Answer the following questions and respond with a JSON array of strings containing the answer.
+
+1. How many $2 bn movies were released before 2000?
+2. Which is the earliest film that grossed over $1.5 bn?
+3. What's the correlation between the Rank and Peak?
+4. Draw a scatterplot of Rank and Peak along with a dotted red regression line through it.
+   Return as a base-64 encoded data URI, "data:image/png;base64,iVBORw0KG..." under 100,000 bytes.</textarea
+          >
+        </label>
+        <label class="grid">
+          <span>Optional attachments (CSV / Parquet / DuckDB / images)</span>
+          <input id="files" type="file" multiple />
+          <span class="muted"
+            >You can attach 0 or more files. <code>questions.txt</code> will
+            always be sent.</span
+          >
+        </label>
+        <div
+          class="grid"
+          style="grid-auto-flow: column; justify-content: start"
+        >
+          <button id="run" type="submit">Run Agent</button>
+          <span id="status" class="muted"></span>
+        </div>
+      </form>
+
+      <div id="out" class="card" style="margin-top: 16px; display: none"></div>
+    </div>
+
+    <script>
+      const form = document.getElementById("form");
+      const qEl = document.getElementById("q");
+      const filesEl = document.getElementById("files");
+      const out = document.getElementById("out");
+      const statusEl = document.getElementById("status");
+
+      function render(val) {
+        out.style.display = "block";
+        out.innerHTML = "";
+        const pre = document.createElement("pre");
+        const tryImg = (v) =>
+          typeof v === "string" && v.startsWith("data:image/");
+        // If array of 4 (sample eval), show image inline for 4th
+        try {
+          const parsed = typeof val === "string" ? JSON.parse(val) : val;
+          if (Array.isArray(parsed)) {
+            parsed.forEach((v, i) => {
+              if (tryImg(v)) {
+                const img = document.createElement("img");
+                img.src = v;
+                out.appendChild(img);
+              } else {
+                const p = document.createElement("pre");
+                p.textContent = JSON.stringify(v, null, 2);
+                out.appendChild(p);
+              }
+            });
+            return;
+          }
+        } catch (_) {
+          /* fallthrough */
+        }
+        pre.textContent =
+          typeof val === "string" ? val : JSON.stringify(val, null, 2);
+        out.appendChild(pre);
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        out.style.display = "none";
+        statusEl.textContent = "Uploading & running…";
+        const fd = new FormData();
+        const blob = new Blob([qEl.value], { type: "text/plain" });
+        fd.append("questions.txt", blob, "questions.txt");
+        const files = filesEl.files;
+        for (let i = 0; i < files.length; i++) {
+          fd.append(files[i].name, files[i]);
+        }
+        try {
+          const res = await fetch("/api/", { method: "POST", body: fd });
+          const isJSON = (res.headers.get("content-type") || "").includes(
+            "application/json"
+          );
+          const data = isJSON ? await res.json() : await res.text();
+          statusEl.textContent = res.ok ? "Done" : "Error";
+          render(data);
+        } catch (err) {
+          statusEl.textContent = "Network error";
+          render(String(err));
+        }
+      });
+    </script>
+  </body>
+</html>
