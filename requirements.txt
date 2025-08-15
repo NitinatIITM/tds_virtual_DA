@@ -9,4 +9,5 @@ pillow
 networkx
 openai
 gunicorn==22.0.0
+lxml
 
